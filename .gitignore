@@ -5,6 +5,8 @@ __pycache__/
 chunks/
 logs/
 outputs/
+!analysis/descriptive_analysis/outputs/
+!analysis/descriptive_analysis/outputs/**
 processed/
 
 data/
