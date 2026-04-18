@@ -2,6 +2,20 @@
 
 本项目已经完成数据清洗、并行抽取与结果合并。下一阶段正式进入 `analysis/`，基于 merged Parquet 做描述统计、行为分析与建模。
 
+## 项目状态总览
+
+| 模块 | 当前状态 | 说明 |
+| --- | --- | --- |
+| 原始数据筛选与清洗 | `✓` | 已从候选数据中清洗出 `1435` 个有效游戏日志 |
+| 并行抽取与 chunk 处理 | `✓` | 已切分为 `8` 个 chunk，并通过 Slurm array jobs 完成并行处理 |
+| merged 数据表生成 | `✓` | 已合并得到 `games / players / public_messages / events / errors` 五张表 |
+| `descriptive_analysis` | `✓` | 已补齐描述统计与基础可视化代码，可直接生成 summary tables 和 overview plots |
+| `vote_analysis` | `○` | 还需要提取投票相关事件、构建投票特征并生成图表 |
+| `speech_analysis` | `○` | 还需要聚合公开发言特征并完成描述统计与图表 |
+| `role_analysis` | `○` | 还需要提取 Seer / Doctor / Werewolf 等角色行动特征 |
+| `regression_models` | `○` | 还需要整合投票、发言、角色行动特征并建立模型 |
+| slides / report 总结 | `○` | 还需要整合分析结果、撰写结论并制作展示材料 |
+
 ## 当前进度
 
 在正式分析之前，我们已经完成了整套数据预处理与并行抽取流程：
