@@ -1,9 +1,9 @@
 """
-Werewolf Project — Regression Models
-Targets  : (1) player survival  (2) player's team victory
-Models   : Logistic Regression (main) + Decision Tree (supplement)
-Strategy : incremental nested models (Model 1-4) + ablation standalone models
-Outputs  : outputs/plots/  and  outputs/tables/
+Werewolf Project — Regression Models (votes_received excluded)
+Removes n_votes_received / n_day_votes_received / n_night_votes_received
+from all feature sets to isolate the predictive power of active behaviors
+(votes cast, speech, role actions) independent of how much others targeted you.
+Outputs → outputs_/plots/  and  outputs_/tables/
 """
 
 import os
@@ -28,19 +28,19 @@ HERE       = os.path.dirname(os.path.abspath(__file__))
 SPEECH_CSV = os.path.join(HERE, "../speech_analysis/Outputs/tables/speech_features_by_player.csv")
 VOTE_CSV   = os.path.join(HERE, "../vote_analysis/outputs/vote_features_by_player.csv")
 ROLE_CSV   = os.path.join(HERE, "../role_analysis/outputs/role_features_by_player.csv")
-OUT_PLOTS  = os.path.join(HERE, "outputs/plots")
-OUT_TABLES = os.path.join(HERE, "outputs/tables")
+OUT_PLOTS  = os.path.join(HERE, "outputs_/plots")
+OUT_TABLES = os.path.join(HERE, "outputs_/tables")
 os.makedirs(OUT_PLOTS,  exist_ok=True)
 os.makedirs(OUT_TABLES, exist_ok=True)
 
 # ── Style ──────────────────────────────────────────────────────────────
-PALETTE     = ["#a9a7c7", "#e8cc7a", "#e48375", "#7fb8b0"]  # Model 1/2/3/4
+PALETTE     = ["#a9a7c7", "#e8cc7a", "#e48375", "#7fb8b0"]
 ROLE_COLORS = {"Villager": "#e8cc7a", "Werewolf": "#7fb8b0",
                "Seer": "#a9a7c7", "Doctor": "#e48375"}
 sns.set_theme(style="whitegrid", font_scale=1.05)
 
 # ══════════════════════════════════════════════════════════════════════
-# 1. LOAD & MERGE ALL FEATURE TABLES
+# 1. LOAD & MERGE
 # ══════════════════════════════════════════════════════════════════════
 speech = pd.read_csv(SPEECH_CSV)
 vote   = pd.read_csv(VOTE_CSV)
@@ -59,7 +59,6 @@ df = (speech
 
 df = df[df["winner_team"].isin(["Villagers", "Werewolves"])].copy()
 
-# Targets
 df["survive"]    = df["alive_end"].astype(int)
 df["player_win"] = (
     ((df["role"] == "Werewolf") & (df["winner_team"] == "Werewolves")) |
@@ -71,36 +70,30 @@ print(f"Dataset: {len(df)} rows  |  "
       f"team-win rate: {df['player_win'].mean():.3f}")
 
 # ══════════════════════════════════════════════════════════════════════
-# 2. FEATURE SETS
+# 2. FEATURE SETS  (votes_received columns excluded)
 # ══════════════════════════════════════════════════════════════════════
 CAT_COLS    = ["role", "model_name"]
-VOTE_COLS   = ["n_votes_received", "n_votes_cast", "n_day_votes_cast",
-               "n_night_votes_cast", "n_day_votes_received", "n_night_votes_received"]
+# Removed: n_votes_received, n_day_votes_received, n_night_votes_received
+VOTE_COLS   = ["n_votes_cast", "n_day_votes_cast", "n_night_votes_cast"]
 SPEECH_COLS = ["n_messages", "avg_text_len", "first_day_messages", "first_day_text_len"]
-# Role-action features: role-specific (nonzero only for the relevant role),
-# plus wolf_day_consistency_rate which is game-level (same for all 8 players in a game)
 ROLE_COLS   = ["n_inspects", "inspect_success_rate",
                "n_heals", "heal_success_rate",
                "n_wolf_votes", "wolf_day_consistency_rate"]
 ALL_COLS    = CAT_COLS + VOTE_COLS + SPEECH_COLS + ROLE_COLS
 
-# ── Incremental models (nested, each step adds one feature group) ──────
 INCR_MODELS = {
-    "Model 1\n(role+model)":        CAT_COLS,
-    "Model 2\n(+vote)":             CAT_COLS + VOTE_COLS,
-    "Model 3\n(+speech)":           CAT_COLS + VOTE_COLS + SPEECH_COLS,
-    "Model 4\n(+role action)":      ALL_COLS,
+    "Model 1\n(role+model)":   CAT_COLS,
+    "Model 2\n(+vote cast)":   CAT_COLS + VOTE_COLS,
+    "Model 3\n(+speech)":      CAT_COLS + VOTE_COLS + SPEECH_COLS,
+    "Model 4\n(+role action)": ALL_COLS,
 }
 
-# ── Ablation models (standalone: each group vs. baseline) ──────────────
-# Each ablation = baseline identity (role+model) + one feature group only.
-# This reveals each group's individual predictive power, controlling for identity.
 ABLA_MODELS = {
-    "Baseline\n(role+model)":       CAT_COLS,
-    "Vote\nonly":                   CAT_COLS + VOTE_COLS,
-    "Speech\nonly":                 CAT_COLS + SPEECH_COLS,
-    "Role action\nonly":            CAT_COLS + ROLE_COLS,
-    "All features\n(Model 4)":      ALL_COLS,
+    "Baseline\n(role+model)": CAT_COLS,
+    "Vote cast\nonly":        CAT_COLS + VOTE_COLS,
+    "Speech\nonly":           CAT_COLS + SPEECH_COLS,
+    "Role action\nonly":      CAT_COLS + ROLE_COLS,
+    "All features\n(Model 4)":ALL_COLS,
 }
 
 TARGETS = [
@@ -124,7 +117,6 @@ def lr_pipe(feat_cols):
                      ("clf", LogisticRegression(max_iter=1000, C=1.0, random_state=42))])
 
 def dt_pipe(feat_cols, max_depth=3):
-    # Decision trees don't need scaling — raw numeric values keep thresholds interpretable
     cat_cols = [c for c in feat_cols if c in CAT_COLS]
     num_cols = [c for c in feat_cols if c not in CAT_COLS]
     steps = []
@@ -151,7 +143,6 @@ def get_feature_names(pipe, feat_cols):
 # ══════════════════════════════════════════════════════════════════════
 # 3. CROSS-VALIDATION (5-fold)
 # ══════════════════════════════════════════════════════════════════════
-print("\nRunning 5-fold CV — incremental models …")
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
 def run_cv(model_dict):
@@ -172,6 +163,7 @@ def run_cv(model_dict):
             })
     return pd.DataFrame(rows)
 
+print("\nRunning 5-fold CV — incremental models …")
 incr_df = run_cv(INCR_MODELS)
 print(incr_df.to_string(index=False))
 
@@ -205,15 +197,15 @@ for ax, (y_col, y_label) in zip(axes, TARGETS):
                 f'{row["auc_mean"]:.3f}', ha="center", va="bottom", fontsize=9)
     ax.legend(fontsize=9)
 
-plt.suptitle("Logistic Regression — Incremental Model Comparison (AUC)",
-             fontsize=13, fontweight="bold")
+plt.suptitle("Logistic Regression — Incremental Model Comparison\n"
+             "(votes_received excluded)", fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.savefig(os.path.join(OUT_PLOTS, "01_model_comparison_incremental.png"), dpi=150)
 plt.close()
 print("\nSaved: 01_model_comparison_incremental.png")
 
 # ══════════════════════════════════════════════════════════════════════
-# PLOT 2 — Ablation: standalone vs. full model
+# PLOT 2 — Ablation: standalone contribution
 # ══════════════════════════════════════════════════════════════════════
 abla_colors = ["#cccccc", "#a9a7c7", "#e8cc7a", "#e48375", "#7fb8b0"]
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -225,7 +217,6 @@ for ax, (y_col, y_label) in zip(axes, TARGETS):
                   yerr=sub["auc_std"], capsize=5,
                   error_kw={"linewidth": 1.5, "ecolor": "#555"})
     ax.axhline(0.5, color="gray", linestyle="--", linewidth=1)
-    # Highlight "All features" bar with edge
     bars[-1].set_edgecolor("black")
     bars[-1].set_linewidth(1.5)
     ax.set_xticks(x)
@@ -238,9 +229,8 @@ for ax, (y_col, y_label) in zip(axes, TARGETS):
                 bar.get_height() + row["auc_std"] + 0.013,
                 f'{row["auc_mean"]:.3f}', ha="center", va="bottom", fontsize=9)
 
-plt.suptitle("Ablation Study — Standalone Contribution of Each Feature Group\n"
-             "(each bar = baseline identity + that group only)",
-             fontsize=12, fontweight="bold")
+plt.suptitle("Ablation Study — Standalone Feature Group Contribution\n"
+             "(votes_received excluded)", fontsize=12, fontweight="bold")
 plt.tight_layout()
 plt.savefig(os.path.join(OUT_PLOTS, "02_ablation_standalone.png"), dpi=150)
 plt.close()
@@ -271,7 +261,7 @@ for ax, (y_col, y_label) in zip(axes, TARGETS):
     ax.set_title(f"ROC Curves — {y_label}", fontweight="bold")
     ax.legend(fontsize=8.5, loc="lower right")
 
-plt.suptitle("Logistic Regression ROC Curves (80/20 split)",
+plt.suptitle("Logistic Regression ROC Curves  (votes_received excluded, 80/20 split)",
              fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.savefig(os.path.join(OUT_PLOTS, "03_roc_curves.png"), dpi=150)
@@ -279,7 +269,7 @@ plt.close()
 print("Saved: 03_roc_curves.png")
 
 # ══════════════════════════════════════════════════════════════════════
-# PLOT 4 & 5 — Coefficient plots (Model 4, full feature set)
+# PLOT 4 & 5 — Coefficient plots (Model 4)
 # ══════════════════════════════════════════════════════════════════════
 for y_col, y_label in TARGETS:
     pipe = lr_pipe(ALL_COLS)
@@ -297,7 +287,8 @@ for y_col, y_label in TARGETS:
     ax.barh(coef_df["feature"], coef_df["coef"], color=colors, height=0.7)
     ax.axvline(0, color="black", linewidth=0.8)
     ax.set_xlabel("Logistic Regression Coefficient (L2-regularized)")
-    ax.set_title(f"Model 4 Coefficients — {y_label}", fontweight="bold")
+    ax.set_title(f"Model 4 Coefficients — {y_label}\n(votes_received excluded)",
+                 fontweight="bold")
     pos_patch = mpatches.Patch(color="#e48375", label="Positive → increases probability")
     neg_patch = mpatches.Patch(color="#7fb8b0", label="Negative → decreases probability")
     ax.legend(handles=[pos_patch, neg_patch], fontsize=9, loc="lower right")
@@ -311,7 +302,7 @@ for y_col, y_label in TARGETS:
         os.path.join(OUT_TABLES, f"coefficients_{y_col}.csv"), index=False)
 
 # ══════════════════════════════════════════════════════════════════════
-# PLOT 6 — Decision Tree (survival, Model 4 features, depth = 3)
+# PLOT 6 — Decision Tree (survival, depth = 3)
 # ══════════════════════════════════════════════════════════════════════
 print("\nFitting Decision Tree …")
 X = df[ALL_COLS]
@@ -330,7 +321,8 @@ plot_tree(dt.named_steps["clf"],
           class_names=["Eliminated", "Survived"],
           filled=True, rounded=True, fontsize=9,
           impurity=False, proportion=True, ax=ax)
-ax.set_title(f"Decision Tree — Player Survival  (depth=3,  test acc={dt_acc:.3f})",
+ax.set_title(f"Decision Tree — Player Survival  (depth=3,  test acc={dt_acc:.3f})\n"
+             "votes_received excluded",
              fontsize=13, fontweight="bold")
 plt.tight_layout()
 plt.savefig(os.path.join(OUT_PLOTS, "06_decision_tree_survival.png"),
@@ -349,7 +341,8 @@ imp_df = (pd.DataFrame({"feature": feat_names_dt,
 fig, ax = plt.subplots(figsize=(8, max(4, len(imp_df) * 0.42)))
 ax.barh(imp_df["feature"], imp_df["importance"], color="#a9a7c7", height=0.65)
 ax.set_xlabel("Gini Importance")
-ax.set_title("Decision Tree Feature Importance — Player Survival", fontweight="bold")
+ax.set_title("Decision Tree Feature Importance — Player Survival\n"
+             "(votes_received excluded)", fontweight="bold")
 plt.tight_layout()
 plt.savefig(os.path.join(OUT_PLOTS, "07_dt_feature_importance.png"),
             dpi=150, bbox_inches="tight")
@@ -357,13 +350,12 @@ plt.close()
 print("Saved: 07_dt_feature_importance.png")
 
 # ══════════════════════════════════════════════════════════════════════
-# PLOT 8 & 9 — Per-role and per-LLM survival accuracy (Model 4)
+# PLOT 8 & 9 — Per-role and per-LLM accuracy (Model 4)
 # ══════════════════════════════════════════════════════════════════════
 pipe_full = lr_pipe(ALL_COLS)
 pipe_full.fit(df[ALL_COLS], df["survive"])
 df["pred_survive"] = pipe_full.predict(df[ALL_COLS])
 
-# Per role
 role_acc = (df.groupby("role")
               .apply(lambda g: accuracy_score(g["survive"], g["pred_survive"]),
                      include_groups=False)
@@ -377,7 +369,8 @@ ax.bar(role_acc["role"],
        width=0.5)
 ax.set_ylim(0, 1)
 ax.set_ylabel("Accuracy")
-ax.set_title("Survival Prediction Accuracy by Role  (Model 4 LR)", fontweight="bold")
+ax.set_title("Survival Prediction Accuracy by Role  (Model 4, votes_received excluded)",
+             fontweight="bold")
 for i, row in enumerate(role_acc.itertuples()):
     ax.text(i, row.accuracy + 0.012, f"{row.accuracy:.3f}", ha="center", fontsize=11)
 plt.tight_layout()
@@ -385,7 +378,6 @@ plt.savefig(os.path.join(OUT_PLOTS, "08_accuracy_by_role.png"), dpi=150)
 plt.close()
 print("Saved: 08_accuracy_by_role.png")
 
-# Per LLM
 model_acc = (df.groupby("model_name")
                .apply(lambda g: accuracy_score(g["survive"], g["pred_survive"]),
                       include_groups=False)
@@ -398,7 +390,8 @@ ax.set_xticks(range(len(model_acc)))
 ax.set_xticklabels(model_acc["model_name"], rotation=20, ha="right", fontsize=9.5)
 ax.set_ylim(0, 1)
 ax.set_ylabel("Survival Prediction Accuracy")
-ax.set_title("Survival Prediction Accuracy by LLM Model  (Model 4 LR)", fontweight="bold")
+ax.set_title("Survival Prediction Accuracy by LLM  (Model 4, votes_received excluded)",
+             fontweight="bold")
 for i, row in enumerate(model_acc.itertuples()):
     ax.text(i, row.accuracy + 0.01, f"{row.accuracy:.3f}", ha="center", fontsize=9)
 plt.tight_layout()
@@ -407,7 +400,7 @@ plt.close()
 print("Saved: 09_accuracy_by_llm.png")
 
 # ── Done ───────────────────────────────────────────────────────────────
-print(f"\nAll outputs → {os.path.relpath(os.path.join(HERE, 'outputs'))}/")
+print(f"\nAll outputs → {os.path.relpath(os.path.join(HERE, 'outputs_'))}/")
 print("  plots/  : 09 PNG files")
 print("  tables/ : model_performance_incremental.csv, model_performance_ablation.csv,")
 print("            coefficients_survive.csv, coefficients_player_win.csv")
