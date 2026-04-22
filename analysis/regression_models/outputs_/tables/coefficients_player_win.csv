@@ -1,24 +1,24 @@
 feature,coef
-role_Werewolf,-3.5773844041600573
-role_Seer,-1.883569471712262
-avg_text_len,-1.6133195126868731
-model_name_Grok 4.1 Fast Reasoning,-1.5337173732677984
-model_name_GPT-5.4 mini,-1.4989097976085275
-model_name_Grok 4,-1.2087354599798654
-first_day_text_len,1.112736416636336
-model_name_Gemini 3 Flash Preview,-0.8571588895763413
-model_name_GPT-5.4,-0.6850564492868507
-wolf_day_consistency_rate,-0.4952374003059655
-n_inspects,0.4734109194158581
-model_name_Gemini 3.1 Pro Preview,-0.4678166627427384
-n_votes_cast,0.3920483648785321
-n_day_votes_cast,0.3206980492925418
-n_night_votes_cast,0.3044396976293895
-n_wolf_votes,0.30443969762935935
-model_name_Claude Sonnet 4.6,-0.25740575606158667
-inspect_success_rate,0.24603877820328246
-n_messages,-0.20983581083211156
-heal_success_rate,0.17261973459646515
-n_heals,-0.1292111010943134
-first_day_messages,-0.0630592188346034
-role_Villager,-0.048036581028980965
+role_Werewolf,-3.5773844041524456
+role_Seer,-1.8835694717189644
+avg_text_len,-1.6133195126859348
+model_name_Grok 4.1 Fast Reasoning,-1.5337173732649518
+model_name_GPT-5.4 mini,-1.498909797606243
+model_name_Grok 4,-1.2087354599764313
+first_day_text_len,1.1127364166348166
+model_name_Gemini 3 Flash Preview,-0.8571588895736
+model_name_GPT-5.4,-0.6850564492859189
+wolf_day_consistency_rate,-0.49523740030466595
+n_inspects,0.47341091941989794
+model_name_Gemini 3.1 Pro Preview,-0.4678166627402763
+n_votes_cast,0.3920483648775316
+n_day_votes_cast,0.3206980492907074
+n_night_votes_cast,0.30443969762950185
+n_wolf_votes,0.30443969762950185
+model_name_Claude Sonnet 4.6,-0.25740575605745686
+inspect_success_rate,0.24603877820360834
+n_messages,-0.20983581083131964
+heal_success_rate,0.17261973459796728
+n_heals,-0.12921110109306902
+first_day_messages,-0.06305921883303872
+role_Villager,-0.04803658102323849
