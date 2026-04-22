@@ -1,12 +1,23 @@
 .venv/
 __pycache__/
 *.pyc
+.DS_Store
 
 chunks/
 logs/
 outputs/
 !analysis/descriptive_analysis/outputs/
 !analysis/descriptive_analysis/outputs/**
+!analysis/speech_analysis/Outputs/
+!analysis/speech_analysis/Outputs/**
+!analysis/vote_analysis/outputs/
+!analysis/vote_analysis/outputs/**
+!analysis/role_analysis/outputs/
+!analysis/role_analysis/outputs/**
+!analysis/regression_models/outputs/
+!analysis/regression_models/outputs/**
+!analysis/regression_models/outputs_/
+!analysis/regression_models/outputs_/**
 processed/
 
 data/
