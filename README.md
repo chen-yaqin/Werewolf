@@ -1,426 +1,259 @@
-# Werewolf Project
+# Werewolf Game Analysis
 
-本项目已经完成数据清洗、并行抽取与结果合并。下一阶段正式进入 `analysis/`，基于 merged Parquet 做描述统计、行为分析与建模。
+This repository contains the completed code, analysis outputs, and presentation-ready materials for a large-scale study of AI agents playing the social deduction game Werewolf. The project converts raw game logs into structured tables, extracts behavioral features, analyzes role-specific and communication patterns, trains predictive models, and provides an interactive Streamlit dashboard for exploring games and player behavior.
 
-## 项目状态总览
+The final project deliverables include the analysis code, generated tables and figures, the written report, and the presentation slides.
 
-| 模块                     | 当前状态 | 说明                                                                        |
-| ------------------------ | -------- | --------------------------------------------------------------------------- |
-| 原始数据筛选与清洗       | `✓`   | 已从候选数据中清洗出 `1435` 个有效游戏日志                                |
-| 并行抽取与 chunk 处理    | `✓`   | 已切分为 `8` 个 chunk，并通过 Slurm array jobs 完成并行处理               |
-| merged 数据表生成        | `✓`   | 已合并得到 `games / players / public_messages / events / errors` 五张表   |
-| `descriptive_analysis` | `✓`   | 已补齐描述统计与基础可视化代码，可直接生成 summary tables 和 overview plots |
-| `vote_analysis`        | `✓`   | 还需要提取投票相关事件、构建投票特征并生成图表                              |
-| `speech_analysis`      | `✓`   | 还需要聚合公开发言特征并完成描述统计与图表                                  |
-| `role_analysis`        | `✓`   | 还需要提取 Seer / Doctor / Werewolf 等角色行动特征                          |
-| `regression_models`    | `✓`   | 还需要整合投票、发言、角色行动特征并建立模型                                |
-| slides / report 总结     | `○`   | 还需要整合分析结果、撰写结论并制作展示材料                                  |
+## Project Overview
 
-## 当前进度
+Werewolf is a hidden-role game in which villagers try to identify and eliminate werewolves while werewolves coordinate secretly to remove villagers. Because the game depends on speech, voting, deception, role actions, and coalition behavior, it provides a useful environment for studying multi-agent LLM behavior.
 
-在正式分析之前，我们已经完成了整套数据预处理与并行抽取流程：
+This project studies 1,435 valid Werewolf games played by LLM agents. The analysis focuses on four main questions:
 
-1. 从约 `57G` 的原始候选数据中抽取出约 `12G` 的 `data.tar`，上传到服务器并解压为 `data/` 目录。
-2. 初步检查发现共有 `5845` 个 JSON 文件，其中 `4405` 个是 `0` 字节空文件，另有 `5` 个非空但损坏的 JSON 文件。
-3. 清洗后最终保留 `1435` 个有效游戏日志，作为后续全部分析的数据基础。
-4. 在服务器上配置了项目虚拟环境，安装依赖并设置 `PYTHONPATH`，同时修复了 Slurm 日志路径、partition 不可用、环境缺失等问题，保证批处理流程可稳定运行。
-5. 将 `1435` 个有效 JSON 按每 `200` 个文件切分为 `8` 个 chunk，并使用增强版 `scripts/process_chunk.py` 提取四类结构化信息：
-   - game-level
-   - player-level
-   - public message-level
-   - event-level
-6. 使用 Slurm array jobs（task `0-7`）并行处理 `8` 个 chunk，成功生成对应的 chunk-level 输出。
-7. 最终将所有 chunk 结果合并为 `5` 张 Parquet 表：
-   - `games.parquet`: `1435` 行
-   - `players.parquet`: `11472` 行
-   - `public_messages.parquet`: `40510` 行
-   - `events.parquet`: `407262` 行
-   - `errors.parquet`: 空表
+1. How do outcomes, role distributions, game length, and survival rates vary across games?
+2. How are voting behavior, vote concentration, and tie frequency related to survival and team victory?
+3. How do public speech patterns differ by role, survival status, and winning team?
+4. Which behavioral features best predict player survival and whether a player's team wins?
 
-到这里，数据预处理与并行抽取阶段已经完成。后续所有描述性统计、可视化与建模分析都直接基于这些 Parquet 表进行，不需要再回到原始 JSON，也不需要再次并行。课程要求中的 parallel computing 部分，已经在 chunk 处理阶段完成。
+## Dataset
 
-## 目录说明
+The raw data began as a large collection of candidate JSON game logs. The preprocessing pipeline identified valid logs, removed empty or corrupted files, and extracted structured information into analysis-ready tables.
 
-当前仓库的核心目录如下：
+Summary of the processed dataset:
+
+| Item                                   |   Count |
+| -------------------------------------- | ------: |
+| Candidate JSON files                   |   5,845 |
+| Empty JSON files removed               |   4,405 |
+| Corrupted non-empty JSON files removed |       5 |
+| Valid games retained                   |   1,435 |
+| Player-game rows                       |  11,472 |
+| Public messages                        |  40,510 |
+| Event records                          | 407,262 |
+| Parsing errors in merged output        |       0 |
+
+The final merged tables are:
+
+| Table                       | Unit of observation          | Description                                                |
+| --------------------------- | ---------------------------- | ---------------------------------------------------------- |
+| `games.parquet`           | One row per game             | Game outcome, game length, player count, and end reason    |
+| `players.parquet`         | One row per player per game  | Role, model name, survival status, and elimination timing  |
+| `public_messages.parquet` | One row per public message   | Speaker, day, phase, message text, and message length      |
+| `events.parquet`          | One row per structured event | Full event stream used for voting and role-action analysis |
+| `errors.parquet`          | One row per failed parse     | Empty in the final processed output                        |
+
+Large raw and intermediate data archives are not tracked directly in this repository. The analysis scripts expect merged data to be available in the project data directory used during preprocessing, while the generated analysis outputs are included under `analysis/`.
+
+## Repository Structure
 
 ```text
 Werewolf/
 ├─ analysis/
-│  ├─ descriptive_analysis/
-│  ├─ vote_analysis/
-│  ├─ speech_analysis/
-│  ├─ role_analysis/
-│  └─ regression_models/
+│  ├─ descriptive_analysis/      # Overview statistics and baseline plots
+│  ├─ vote_analysis/             # Vote-event extraction, vote features, and plots
+│  ├─ speech_analysis/           # Public-message features and speech plots
+│  ├─ role_analysis/             # Seer, Doctor, and Werewolf role-action features
+│  ├─ regression_models/         # Predictive modeling outputs and figures
+│  └─ visualization/             # Interactive Streamlit dashboard
 ├─ scripts/
-│  ├─ make_chunks.py
-│  ├─ process_chunk.py
-│  └─ merge_outputs.py
+│  ├─ make_chunks.py             # Build chunk manifests for parallel processing
+│  ├─ process_chunk.py           # Extract structured CSV rows from JSON logs
+│  └─ merge_outputs.py           # Merge chunk-level CSVs into final tables
 ├─ slurm/
 │  ├─ 00_create_env.sbatch
 │  ├─ 01_extract_data.sbatch
 │  ├─ 02_make_chunks.sbatch
 │  ├─ 03_process_chunks_array.sbatch
 │  └─ 04_merge_outputs.sbatch
+├─ requirements.txt
 └─ README.md
 ```
 
-## `download/` 里有什么
+## Methodology
 
-在当前 workspace 中，预处理产物位于仓库同级目录的 `download/` 下。关键内容如下：
+### 1. Parallel Data Processing
 
-```text
-download/
-└─ download/
-   ├─ data_cleaned.tar
-   ├─ outputs.tar
-   └─ outputs/
-      └─ outputs/
-         ├─ chunk_results/
-         └─ merged/
+The raw logs were cleaned and processed using a chunk-based workflow designed for Slurm:
+
+1. Valid JSON files were identified after removing empty and corrupted logs.
+2. The 1,435 valid logs were split into 8 chunk manifests.
+3. Slurm array jobs processed chunks in parallel.
+4. Each chunk produced CSV files for games, players, public messages, events, and errors.
+5. Chunk outputs were merged into final Parquet tables for analysis.
+
+The preprocessing stage produced the structured data foundation for all later analysis and satisfies the parallel-computing component of the project.
+
+### 2. Descriptive Analysis
+
+The descriptive analysis summarizes the full dataset and creates overview plots for:
+
+- Winner-team distribution
+- Game length distribution
+- Role counts
+- Role survival rates
+- Public messages per game
+- Event-type frequencies
+
+Key descriptive results:
+
+- Villagers won 1,000 of 1,435 games, or 69.7%.
+- Games contained an average of 7.99 players.
+- Public messages averaged 28.23 messages per game.
+- The average public message length was 548.32 characters.
+- The most frequent event type was `phase_change`, with 103,287 records.
+- Villagers had the highest role-level survival rate at 54.8%.
+
+### 3. Voting Analysis
+
+The voting analysis extracts `vote_action` events and separates day votes from night votes. It creates player-level and game-level features such as:
+
+- Votes cast
+- Votes received
+- Day votes cast and received
+- Night votes cast and received
+- Vote concentration
+- Tie frequency
+- Average night-vote agreement
+
+Generated outputs are stored in `analysis/vote_analysis/outputs/`, with figures in `analysis/vote_analysis/plots/`.
+
+### 4. Speech Analysis
+
+The speech analysis aggregates public messages by player and game. It measures:
+
+- Number of messages
+- Total text length
+- Average message length
+- First-day message count
+- First-day text length
+- Relationships among speech, role, survival, and winning team
+
+Generated tables are stored in `analysis/speech_analysis/Outputs/tables/`, with figures in `analysis/speech_analysis/Outputs/plots/`.
+
+### 5. Role Analysis
+
+The role analysis focuses on mechanics unique to Werewolf:
+
+- Seer inspection behavior
+- Doctor healing behavior
+- Werewolf night-targeting behavior
+- Role-specific survival and elimination patterns
+
+Generated outputs are stored in `analysis/role_analysis/outputs/`, with figures in `analysis/role_analysis/plots/`.
+
+### 6. Predictive Modeling
+
+The modeling stage combines role, model identity, voting, speech, and role-action features. It evaluates two prediction targets:
+
+- Whether a player survives to the end of the game
+- Whether a player's team wins
+
+Models include logistic regression for the main analysis and decision trees for interpretable supplementary analysis. Five-fold cross-validation is used to compare incremental feature sets and ablation models.
+
+Best observed cross-validated performance in the generated outputs:
+
+| Target            | Best ROC-AUC | Best Accuracy |
+| ----------------- | -----------: | ------------: |
+| Player survival   |        0.888 |         0.821 |
+| Player's team win |        0.801 |         0.732 |
+
+Model tables and figures are stored in `analysis/regression_models/outputs_/`.
+
+## Interactive Dashboard
+
+The Streamlit dashboard in `analysis/visualization/app.py` provides an interactive way to inspect the final analysis outputs.
+
+Features include:
+
+- Game browser with random-game selection
+- Player roster by role, model, and survival status
+- Day and night vote timelines
+- Public message display when message text is available
+- Elimination order
+- Player statistics by role, model, survival status, and winning team
+- Group comparisons across behavioral metrics
+
+Run the dashboard with:
+
+```powershell
+streamlit run analysis/visualization/app.py
 ```
 
-各部分含义：
+## Setup
 
-- `download/download/data_cleaned.tar`
+Create and activate a virtual environment, then install dependencies:
 
-  - 清洗后的有效 JSON 数据打包结果。
-  - 对应最终保留下来的 `1435` 个有效游戏日志。
-- `download/download/outputs.tar`
-
-  - 并行抽取产物的整体打包文件。
-  - 便于迁移、备份或重新分发输出结果。
-- `download/download/outputs/outputs/chunk_results/`
-
-  - `8` 个 chunk 的逐块输出结果。
-  - 每个 chunk 都会生成一组 CSV，例如：
-    - `games_chunk_00000.csv`
-    - `players_chunk_00000.csv`
-    - `public_messages_chunk_00000.csv`
-    - `events_chunk_00000.csv`
-    - `errors_chunk_00000.csv`
-  - 这部分主要用于检查 chunk 级别是否正常，以及必要时回溯具体块的处理结果。
-- `download/download/outputs/outputs/merged/`
-
-  - 所有 chunk 合并后的最终分析数据。
-  - 这是后续 `analysis/` 应该直接读取的目录。
-  - 当前包含：
-    - `games.parquet`
-    - `players.parquet`
-    - `public_messages.parquet`
-    - `events.parquet`
-    - `errors.parquet`
-
-## Final Parquet 结构
-
-后续分析默认读取 `download/download/outputs/outputs/merged/` 中的 5 张表。
-
-### `games.parquet`
-
-每局游戏一行，主要字段：
-
-- `game_id`
-- `filename`
-- `winner_team`
-- `last_day`
-- `n_players`
-- `end_reason`
-
-用途：做 game-level 描述统计，例如总局数、胜负分布、游戏长度分布。
-
-### `players.parquet`
-
-每局中每位玩家一行，主要字段：
-
-- `game_id`
-- `player_id`
-- `role`
-- `model_name`
-- `alive_end`
-- `eliminated_during_day`
-- `eliminated_during_phase`
-
-用途：做 player-level 统计，例如角色分布、生存率、不同角色的白天/夜晚淘汰情况。
-
-### `public_messages.parquet`
-
-每条公开发言一行，主要字段：
-
-- `game_id`
-- `filename`
-- `day`
-- `phase`
-- `speaker_id`
-- `event_name`
-- `text`
-- `text_len`
-- `created_at`
-
-用途：做公开发言行为分析，例如发言次数、发言长度、首日发言活跃度。
-
-### `events.parquet`
-
-每条事件一行，是最完整的行为流水表，主要字段：
-
-- `game_id`
-- `filename`
-- `outer_idx`
-- `inner_idx`
-- `data_type`
-- `event_name`
-- `day`
-- `phase`
-- `detailed_phase`
-- `source`
-- `public`
-- `visible_in_ui`
-- `created_at`
-- `actor_id`
-- `target_id`
-- `reasoning`
-- `description`
-
-用途：做投票分析、角色行动分析，以及必要时补查上下文。
-
-### `errors.parquet`
-
-异常记录表，字段：
-
-- `filepath`
-- `error`
-
-当前为空，说明 merged 数据中没有残留解析错误。
-
-## 下一步：正式进入 `analysis/`
-
-接下来所有工作围绕下面 5 个子目录展开：
-
-```text
-analysis/
-├─ descriptive_analysis/
-├─ vote_analysis/
-├─ speech_analysis/
-├─ role_analysis/
-└─ regression_models/
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-推荐按“先总览、再三条主线、最后整合模型”的顺序推进。
+On macOS or Linux:
 
-## 每个分析文件夹要做什么
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-### `analysis/descriptive_analysis`
+## Reproducing the Data Pipeline
 
-目标：先把数据本身讲清楚，作为 report 和 slides 的开头。
+The full preprocessing workflow can be run manually or through the Slurm scripts in `slurm/`.
 
-需要分析：
+Create chunk manifests:
 
-- 总游戏数
-- `winner_team` 分布
-- `last_day` 分布
-- 玩家角色分布
-- 各角色 survival rate
-- 每局公开发言数分布
-- 每条消息平均长度
-- 事件类型频次
+```powershell
+python scripts/make_chunks.py --data-dir <clean_json_dir> --chunks-dir <chunks_dir> --files-per-chunk 200
+```
 
-建议代码：
+Process one chunk:
 
-- `01_overview_stats.py`
-  - 读取 `games.parquet`、`players.parquet`、`public_messages.parquet`、`events.parquet`
-  - 输出 summary text 和 summary csv
-- `02_overview_plots.py`
-  - 生成基础描述图
+```powershell
+python scripts/process_chunk.py --chunk_file <chunks_dir>/chunk_00000.txt --chunk_id 00000 --output_dir <chunk_output_dir>
+```
 
-建议输出：
+Merge chunk outputs:
 
-- `winner_team_counts.csv`
-- `role_counts.csv`
-- `role_survival_rates.csv`
-- `game_length_counts.csv`
-- `messages_per_game_summary.csv`
+```powershell
+python scripts/merge_outputs.py --chunks-root <chunk_output_dir> --merged-root <merged_output_dir> --write-format parquet
+```
 
-建议图：
+For the original cluster workflow, use the Slurm job scripts in order:
 
-- Winner team bar chart
-- Game length histogram / bar chart
-- Role count bar chart
-- Role survival rate bar chart
-- Messages per game histogram
+```bash
+sbatch slurm/00_create_env.sbatch
+sbatch slurm/01_extract_data.sbatch
+sbatch slurm/02_make_chunks.sbatch
+sbatch slurm/03_process_chunks_array.sbatch
+sbatch slurm/04_merge_outputs.sbatch
+```
 
-### `analysis/vote_analysis`
+## Reproducing the Analyses
 
-目标：分析投票模式与胜负、出局之间的关系。
+The generated outputs are already included in the repository. To rerun selected analysis components, use the relevant scripts or notebooks under `analysis/`.
 
-需要分析：
+Examples:
 
-- 白天投票事件与夜间狼人投票事件
-- 玩家投票次数、被投票次数
-- 是否容易出现分票或 tie
-- 投票集中度是否和胜负相关
-- 狼人夜间 targeting 是否更一致
+```powershell
+python analysis/descriptive_analysis/01_overview_stats.py
+python analysis/descriptive_analysis/02_overview_plots.py
+python analysis/regression_models/modeling.py
+```
 
-建议代码：
+Some analysis scripts and notebooks were executed in the original project environment after the merged data tables were produced. If running them on a new machine, confirm that the local data paths match the expected merged-table location.
 
-- `01_extract_vote_features.py`
-  - 从 `events.parquet` 中提取 vote-related rows
-  - 构建 player-level 和 game-level 投票特征
-- `02_vote_summary.py`
-  - 输出描述统计表
-- `03_vote_plots.py`
-  - 生成投票相关图
+## Main Outputs
 
-建议输出：
+Important generated artifacts include:
 
-- `vote_events.parquet` 或 `vote_events.csv`
-- `vote_features_by_player.csv`
-- `vote_features_by_game.csv`
-
-建议图：
-
-- Votes received by outcome
-- Vote concentration by winning team
-- Night vote agreement rate for werewolves
-- Representative vote flow chart（可选）
-
-### `analysis/speech_analysis`
-
-目标：基于公开发言做轻量、可解释的行为分析，不做复杂 NLP。
-
-需要分析：
-
-- 每位玩家的发言次数
-- 每位玩家的总发言长度与平均发言长度
-- 首日发言活跃度
-- 玩家发言活跃度与生存/胜负关系
-- 不同角色的说话模式差异
-
-建议代码：
-
-- `01_extract_speech_features.py`
-  - 按 `game_id + speaker_id` 聚合公开发言
-- `02_speech_summary.py`
-  - 输出描述统计
-- `03_speech_plots.py`
-  - 生成发言相关图
-
-建议输出：
-
-- `speech_features_by_player.csv`
-- `speech_features_by_game.csv`
-
-建议图：
-
-- Message count by role
-- Message count by win/loss
-- Average message length by role
-- First-day message count vs survival / win
-- Top speakers per game distribution（可选）
-
-### `analysis/role_analysis`
-
-目标：分析 Werewolf 中最有特色的角色机制，尤其是夜间行动。
-
-需要分析：
-
-- Seer 的 inspect 行为
-- Doctor 的 heal 行为
-- Werewolf 的夜间 targeting 行为
-- 各角色白天放逐与夜晚淘汰比例
-- 各角色活到最后的比例
-
-建议代码：
-
-- `01_extract_role_action_features.py`
-  - 从 `events.parquet` 中提取角色行动相关事件
-- `02_role_summary.py`
-  - 生成角色行动统计表
-- `03_role_plots.py`
-  - 生成角色相关图
-
-建议输出：
-
-- `seer_features.csv`
-- `doctor_features.csv`
-- `werewolf_night_features.csv`
-- 或合并后的 `role_action_features.csv`
-
-建议图：
-
-- Role survival rate
-- Role elimination phase distribution
-- Seer found wolf vs villager win rate
-- First-night target role distribution
-- Doctor action frequency / inferred save success（可选）
-
-### `analysis/regression_models`
-
-目标：把投票、发言和角色行动三条线整合成统一模型，作为最后的总结部分。
-
-需要分析：
-
-- 玩家所在阵营是否获胜
-- 玩家是否活到最后
-- 哪类特征最有解释力
-- 加入投票、发言、角色行动后模型是否提升
-
-建议代码：
-
-- `01_build_model_table.py`
-  - 合并 vote、speech、role 三条线特征，得到 player-level modeling table
-- `02_logistic_regression.py`
-  - 建立 logistic regression
-- `03_decision_tree.py`
-  - 可选，作为补充模型
-
-建议模型版本：
-
-- Model 1: 基础特征（`role`、`model_name`）
-- Model 2: 基础 + 投票特征
-- Model 3: 基础 + 投票 + 发言特征
-- Model 4: 基础 + 投票 + 发言 + 角色行动特征
-
-建议图：
-
-- Logistic regression coefficient plot
-- Model performance comparison
-- Decision tree plot（可选）
-
-## 推荐推进顺序
-
-建议按下面顺序开展：
-
-1. `descriptive_analysis`
-2. `vote_analysis`
-3. `speech_analysis`
-4. `role_analysis`
-5. `regression_models`
-
-原因很简单：
-
-- `descriptive_analysis` 能先确认 merged Parquet 是否正常，并直接产出 slides 开头要用的图。
-- `vote_analysis` 依赖 `events.parquet` 最多，应该尽早把事件筛选逻辑跑通。
-- `speech_analysis` 和 `role_analysis` 可以在前两部分稳定后并行推进。
-- `regression_models` 需要前面三条特征线都准备好，适合最后做整合。
-
-## 团队协作建议
-
-为了减少冲突，建议大家先认领自己的任务，再分别提交自己负责的代码。
-
-推荐方式：
-
-1. 每个人认领一个分析子目录，或认领明确的脚本文件。
-2. 尽量不要多人同时改同一个脚本。
-3. 每个人只 push 自己负责部分的代码。
-4. 如果需要改公共文件，先在组内说明，避免覆盖别人修改。
-
-一个简单可执行的分工方式是：
-
-- A 负责 `descriptive_analysis`
-- B 负责 `vote_analysis`
-- C 负责 `speech_analysis`
-- D 负责 `role_analysis`
-- E 负责 `regression_models`
-- 最后汇总结论+ppt+report
-
-## 总结
-
-我们已经完成了从原始 JSON 到 merged Parquet 的清洗、并行抽取与合并；接下来团队只需要围绕 `analysis/` 五个子目录认领任务、编写分析脚本、生成图表并完成最终报告即可。
+| Location                                   | Contents                                      |
+| ------------------------------------------ | --------------------------------------------- |
+| `analysis/descriptive_analysis/outputs/` | Overview tables and descriptive plots         |
+| `analysis/vote_analysis/outputs/`        | Clean voting events and vote-derived features |
+| `analysis/vote_analysis/plots/`          | Voting behavior figures                       |
+| `analysis/speech_analysis/Outputs/`      | Speech feature tables and plots               |
+| `analysis/role_analysis/outputs/`        | Role-action feature tables                    |
+| `analysis/role_analysis/plots/`          | Role-action and survival figures              |
+| `analysis/regression_models/outputs_/`   | Model performance tables and model figures    |
+| `analysis/visualization/app.py`          | Interactive dashboard                         |
